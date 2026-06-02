@@ -1,0 +1,96 @@
+{
+  "project_name": "GNOVA Fintech Platform",
+  "domain": "Fintech, Crypto, Dashboard",
+  "theme": "LIGHT",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "emotional_tone": "Authoritative, Secure, Clear, and Trustworthy",
+  "brand_colors": {
+    "primary": "#0B192C",
+    "primary_hover": "#1A2B4C",
+    "accent": "#059669",
+    "accent_hover": "#047857",
+    "background": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "border": "#E2E8F0",
+    "text_primary": "#0F172A",
+    "text_secondary": "#64748B",
+    "danger": "#E11D48",
+    "success": "#059669",
+    "warning": "#D97706",
+    "crypto_btc": "#F7931A",
+    "crypto_usdt": "#26A17B"
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Vazirmatn",
+    "mono_font": "JetBrains Mono",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight font-black text-[#0F172A]",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-bold text-[#0F172A]",
+      "h3": "text-xl sm:text-2xl font-semibold text-[#0F172A]",
+      "body": "text-base leading-relaxed text-[#475569]",
+      "small": "text-sm text-[#64748B]",
+      "numbers": "font-mono tracking-tight font-medium",
+      "overline": "text-xs uppercase tracking-[0.2em] font-bold text-[#64748B]"
+    }
+  },
+  "layout": {
+    "spacing_system": "p-4, p-6, p-8 for dashboard cards. p-16, p-24 for landing page sections.",
+    "grid_system": {
+      "dashboard": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 or gap-6. Dense 'Control Room' style.",
+      "landing": "grid-cols-1 md:grid-cols-12 gap-8. Asymmetric 'Bento' style for feature sections."
+    },
+    "rtl_support": {
+      "enabled": true,
+      "rules": "Dashboard Sidebar must be on the right. Content flow right-to-left. Use dir='rtl' on body/html. Icons implying direction must be mirrored."
+    },
+    "radius": "rounded-md or rounded-lg (max 8px). Avoid pill shapes to maintain an authoritative Swiss look.",
+    "alignment": "Left-aligned for LTR, Right-aligned for RTL. Financial numbers should ideally use tabular nums and right alignment in tables."
+  },
+  "components": {
+    "buttons": "Solid primary color for main actions, stark white text. Lighter hover state. Always include data-testid.",
+    "cards": "Flat background (bg-white), 1px border (border-slate-200), no shadow by default. Hover adds shadow-sm and -translate-y-[2px].",
+    "inputs": "Shadcn standard, focus:ring-2 focus:ring-[#0B192C].",
+    "charts": "Use Recharts (Shadcn charts). High contrast colors. Solid strokes. No gradient fills unless communicating volume.",
+    "navigation": "Dashboard: Sidebar right (RTL). Landing Page: Glassmorphism sticky header (backdrop-blur-xl bg-white/70, border-b border-slate-200/50).",
+    "tables": "Dense, crisp borders (border-collapse). Monospace for IDs, amounts, and crypto addresses."
+  },
+  "motion": {
+    "micro_interactions": "Hover states on cards and buttons using 'transition-all duration-200 ease-in-out'.",
+    "page_transitions": "Subtle fade-in and slide-up (framer-motion).",
+    "accessibility": "Respect prefers-reduced-motion."
+  },
+  "assets": {
+    "icons": {
+      "library": "lucide-react",
+      "usage": "Use stroke-width 2. Keep sizing consistent (w-5 h-5 for inline)."
+    },
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1558591710-4b4a1ae0f04d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzZ8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGdlb21ldHJpYyUyMGxpbmVzJTIwd2hpdGV8ZW58MHx8fHwxNzgwNDAzMTc0fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract white geometric lines for landing page hero background to give a clean, tech-forward vibe.",
+        "category": "hero_background"
+      },
+      {
+        "url": "https://images.pexels.com/photos/35240093/pexels-photo-35240093.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Tehran Milad Tower skyline to resonate with Iranian users, suitable for a localized feature section.",
+        "category": "feature_localization"
+      },
+      {
+        "url": "https://images.pexels.com/photos/7947970/pexels-photo-7947970.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Modern phone displaying financial charts, representing the crypto/fintech aspect and mobile readiness.",
+        "category": "feature_analytics"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "1. Initialize Tailwind with the exact color palette provided in 'brand_colors'. Do NOT use default blue/purple gradients.",
+    "2. Add 'Vazirmatn' and 'Outfit' fonts via Google Fonts or standard imports. Apply 'font-sans' correctly in tailwind config.",
+    "3. Build the dashboard layout mirroring standard LTR (sidebar on the right for RTL users). Ensure layout is responsive (mobile-first).",
+    "4. Use Shadcn components for complex interactions (Tables, Dropdowns, Select, DatePicker, Charts) and customize their borders and radius to match max 8px.",
+    "5. Format all financial numbers clearly. Use monospace font (JetBrains Mono) for ledger values and crypto balances.",
+    "6. MUST add `data-testid` to all interactive elements (buttons, inputs, links, tabs) for testing. e.g., `data-testid='login-submit-button'`.",
+    "7. Implement clear status indicators (Green for success, Red for pending/fail) in the Transaction History.",
+    "8. Landing page should feature a strong hero section using the 'hero_background' image, overlay with bg-white/40 (glassmorphism) if text contrast is needed."
+  ]
+}
