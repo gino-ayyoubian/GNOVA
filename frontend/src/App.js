@@ -9,7 +9,10 @@ import DepositPage from './pages/DepositPage';
 import WithdrawPage from './pages/WithdrawPage';
 import ConvertPage from './pages/ConvertPage';
 import HistoryPage from './pages/HistoryPage';
-import { WalletPage, AnalyticsPage, AlertsPage, SettingsPage } from './pages/Placeholders';
+import WalletPage from './pages/WalletPage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import AlertsPage from './pages/AlertsPage';
+import SettingsPage from './pages/SettingsPage';
 
 const ProtectedRoute = ({ children }) => {
   const { token, loading } = useAuth();

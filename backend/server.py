@@ -20,15 +20,22 @@ from dotenv import load_dotenv
 from database import get_db, init_database
 from auth_service import AuthService
 from ledger_service import LedgerService
+from rate_service import RateService
+from zarinpal_service import ZarinPalService
+from kyc_service import KYCService
+from otp_service import OTPService
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Create the main app
-app = FastAPI(title="GNOVA Fintech API", version="1.0.0")
+app = FastAPI(title="GNOVA Fintech API", version="1.1.0")
 
 # Create API router with /api prefix
 api_router = APIRouter(prefix="/api")
+
+# Initialize ZarinPal service
+zarinpal = ZarinPalService()
 
 # CORS middleware
 app.add_middleware(
@@ -79,6 +86,30 @@ class RateAlertRequest(BaseModel):
     to_asset: str
     target_rate: float
     condition: str = "below"  # below, above
+
+
+class KYCSubmitRequest(BaseModel):
+    full_name: str
+    national_id: str
+    birth_date: str
+    address: str
+    phone: str
+
+
+class OTPRequestModel(BaseModel):
+    purpose: str = "withdrawal"
+
+
+class OTPVerifyModel(BaseModel):
+    code: str
+    purpose: str = "withdrawal"
+
+
+class ZarinPalCallbackRequest(BaseModel):
+    deposit_id: str
+    authority: str
+    status: str
+    amount: int
 
 
 # ==================== Auth Dependency ====================
@@ -346,29 +377,17 @@ async def get_conversion_quote(
     request: ConvertQuoteRequest,
     user: dict = Depends(get_current_user)
 ):
-    """Get conversion quote with rate lock"""
+    """Get conversion quote with rate lock - uses live rates"""
     
-    # Mock exchange rates (CREDIT and IRR are equivalent)
-    rates = {
-        ("IRR", "USDT"): 1 / 65000,
-        ("USDT", "IRR"): 65000,
-        ("IRR", "BTC"): 1 / 2850000000,
-        ("BTC", "IRR"): 2850000000,
-        ("USDT", "BTC"): 1 / 43846,
-        ("BTC", "USDT"): 43846,
-        ("CREDIT", "USDT"): 1 / 65000,
-        ("USDT", "CREDIT"): 65000,
-        ("CREDIT", "BTC"): 1 / 2850000000,
-        ("BTC", "CREDIT"): 2850000000,
-        ("CREDIT", "IRR"): 1,
-        ("IRR", "CREDIT"): 1,
-    }
+    # Get live rate from RateService
+    try:
+        rate = await RateService.get_rate(request.from_asset, request.to_asset)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Rate service unavailable: {str(e)}")
     
-    rate_key = (request.from_asset, request.to_asset)
-    if rate_key not in rates:
+    if not rate or rate == 1.0 and request.from_asset != request.to_asset:
         raise HTTPException(status_code=400, detail="Conversion pair not supported")
     
-    rate = rates[rate_key]
     quoted_amount = int(request.amount_minor * rate)
     fee = int(quoted_amount * 0.003)  # 0.3% fee
     final_amount = quoted_amount - fee
@@ -408,7 +427,8 @@ async def get_conversion_quote(
             "rate": rate,
             "amount_to": final_amount,
             "fee": fee,
-            "expires_at": expires_at.isoformat()
+            "expires_at": expires_at.isoformat(),
+            "source": "live"
         }
         
     finally:
@@ -664,6 +684,342 @@ async def get_rate_alerts(user: dict = Depends(get_current_user)):
         await db.close()
 
 
+@api_router.delete("/alerts/{alert_id}")
+async def delete_rate_alert(alert_id: str, user: dict = Depends(get_current_user)):
+    """Delete a rate alert"""
+    db = await get_db()
+    try:
+        await db.execute("""
+            UPDATE rate_alerts SET status='deleted' 
+            WHERE id=? AND user_id=?
+        """, (alert_id, user["id"]))
+        await db.commit()
+        return {"success": True}
+    finally:
+        await db.close()
+
+
+# ==================== Live Rates ====================
+
+@api_router.get("/rates")
+async def get_current_rates():
+    """Get live exchange rates from Nobitex/CoinGecko"""
+    rates = await RateService.get_all_rates()
+    return {"rates": rates, "updated_at": datetime.now(timezone.utc).isoformat()}
+
+
+@api_router.get("/rates/{from_asset}/{to_asset}")
+async def get_specific_rate(from_asset: str, to_asset: str):
+    """Get a specific exchange rate"""
+    rate = await RateService.get_rate(from_asset.upper(), to_asset.upper())
+    return {
+        "from": from_asset.upper(),
+        "to": to_asset.upper(),
+        "rate": rate,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+
+
+# ==================== KYC ====================
+
+@api_router.post("/kyc/submit")
+async def submit_kyc(
+    request: KYCSubmitRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Submit KYC application"""
+    result = await KYCService.submit_kyc(
+        user_id=user["id"],
+        full_name=request.full_name,
+        national_id=request.national_id,
+        birth_date=request.birth_date,
+        address=request.address,
+        phone=request.phone
+    )
+    
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    
+    return result
+
+
+@api_router.get("/kyc/status")
+async def get_kyc_status(user: dict = Depends(get_current_user)):
+    """Get current user's KYC status"""
+    status = await KYCService.get_kyc_status(user["id"])
+    return {
+        "kyc_status": user.get("kyc_status", "pending"),
+        "submission": status
+    }
+
+
+@api_router.post("/kyc/auto-approve")
+async def auto_approve_kyc(user: dict = Depends(get_current_user)):
+    """
+    Auto-approve KYC for demo purposes.
+    In production, this would be admin-only and require manual review.
+    """
+    result = await KYCService.approve_kyc(user["id"])
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
+
+# ==================== OTP / 2FA ====================
+
+@api_router.post("/otp/request")
+async def request_otp(
+    request: OTPRequestModel,
+    user: dict = Depends(get_current_user)
+):
+    """Request an OTP code via Telegram"""
+    result = await OTPService.create_otp(user["id"], request.purpose)
+    
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    
+    # Send via Telegram
+    sent = await OTPService.send_otp_telegram(
+        telegram_id=user["telegram_id"],
+        code=result["code"],
+        purpose=request.purpose
+    )
+    
+    return {
+        "success": True,
+        "sent_via_telegram": sent,
+        "expires_at": result["expires_at"],
+        "expires_in_seconds": result["expires_in_seconds"]
+    }
+
+
+@api_router.post("/otp/verify")
+async def verify_otp(
+    request: OTPVerifyModel,
+    user: dict = Depends(get_current_user)
+):
+    """Verify an OTP code"""
+    result = await OTPService.verify_otp(user["id"], request.code, request.purpose)
+    
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    
+    return {"success": True, "message": result["message"]}
+
+
+# ==================== ZarinPal Integration ====================
+
+@api_router.get("/payment/zarinpal/status")
+async def zarinpal_status():
+    """Check if ZarinPal is configured"""
+    return {
+        "configured": zarinpal.is_configured(),
+        "sandbox": zarinpal.sandbox,
+        "message": "ZarinPal sandbox mode" if zarinpal.sandbox else "ZarinPal production mode"
+    }
+
+
+@api_router.post("/payment/zarinpal/request")
+async def zarinpal_request(
+    request: DepositInitiateRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Initiate ZarinPal payment request"""
+    deposit_id = str(uuid.uuid4())
+    
+    result = await zarinpal.request_payment(
+        amount_rial=request.amount_irr,
+        deposit_id=deposit_id,
+        user_email=user.get("email"),
+        description=f"GNOVA Deposit for {user.get('username', 'user')}"
+    )
+    
+    if not result["success"]:
+        if result.get("fallback"):
+            # Fallback to mock PSP if not configured
+            return {
+                "success": True,
+                "deposit_id": deposit_id,
+                "amount_irr": request.amount_irr,
+                "payment_url": f"{os.getenv('APP_URL')}/payment/{deposit_id}",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
+                "instructions": "Mock payment (ZarinPal not configured)",
+                "mode": "mock"
+            }
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    
+    # Store pending deposit
+    db = await get_db()
+    try:
+        await db.execute("""
+            INSERT INTO webhook_events (id, provider, external_id, payload, signature_valid, processed, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(uuid.uuid4()),
+            "zarinpal",
+            result["authority"],
+            json.dumps({
+                "user_id": user["id"],
+                "amount_irr": request.amount_irr,
+                "deposit_id": deposit_id,
+                "status": "pending"
+            }),
+            1, 0,
+            datetime.now(timezone.utc).isoformat()
+        ))
+        await db.commit()
+    finally:
+        await db.close()
+    
+    return {
+        "success": True,
+        "deposit_id": deposit_id,
+        "authority": result["authority"],
+        "amount_irr": request.amount_irr,
+        "payment_url": result["payment_url"],
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
+        "mode": "sandbox" if zarinpal.sandbox else "production"
+    }
+
+
+@api_router.post("/payment/zarinpal/verify")
+async def zarinpal_verify(request: ZarinPalCallbackRequest):
+    """Verify ZarinPal payment after user returns from gateway"""
+    
+    if request.status != "OK":
+        return {"success": False, "error": "Payment was cancelled"}
+    
+    # Find the webhook event
+    db = await get_db()
+    try:
+        cursor = await db.execute("""
+            SELECT * FROM webhook_events 
+            WHERE external_id = ? AND provider = 'zarinpal'
+        """, (request.authority,))
+        event = await cursor.fetchone()
+        
+        if not event:
+            raise HTTPException(status_code=404, detail="Payment not found")
+        
+        # Check if already processed (idempotency)
+        if event["processed"]:
+            return {"success": True, "message": "Already processed"}
+        
+        payload = json.loads(event["payload"])
+        user_id = payload["user_id"]
+        amount = payload["amount_irr"]
+        
+        # Verify with ZarinPal
+        verify_result = await zarinpal.verify_payment(request.authority, amount)
+        
+        if not verify_result["success"]:
+            raise HTTPException(
+                status_code=400,
+                detail=verify_result.get("error", "Verification failed")
+            )
+        
+        # Get user's CREDIT account
+        credit_asset_id = os.getenv("CREDIT_ASSET_ID", "asset-credit-irr")
+        cursor = await db.execute("""
+            SELECT id FROM accounts WHERE user_id=? AND asset_id=?
+        """, (user_id, credit_asset_id))
+        account = await cursor.fetchone()
+        
+        if not account:
+            raise HTTPException(status_code=404, detail="User account not found")
+        
+        # Credit the account (idempotent via ref_id)
+        ref_id = str(verify_result.get("ref_id", request.authority))
+        credit_result = await LedgerService.credit_account(
+            user_id=user_id,
+            account_id=account["id"],
+            asset_id=credit_asset_id,
+            amount_minor=amount,
+            source_event="deposit_zarinpal",
+            source_ref=f"zarinpal-{ref_id}",
+            metadata={"authority": request.authority, "ref_id": ref_id, "card_pan": verify_result.get("card_pan")}
+        )
+        
+        if credit_result["ok"]:
+            await db.execute("""
+                UPDATE webhook_events SET processed=1 WHERE external_id=?
+            """, (request.authority,))
+            await db.commit()
+            
+            return {
+                "success": True,
+                "ref_id": ref_id,
+                "amount": amount,
+                "message": "پرداخت با موفقیت تایید شد"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Credit failed")
+        
+    finally:
+        await db.close()
+
+
+# ==================== Analytics ====================
+
+@api_router.get("/analytics/summary")
+async def get_analytics_summary(user: dict = Depends(get_current_user)):
+    """Get spending analytics summary"""
+    db = await get_db()
+    try:
+        # Total deposits this month
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        
+        cursor = await db.execute("""
+            SELECT 
+                SUM(CASE WHEN type IN ('deposit', 'deposit_confirmed', 'deposit_zarinpal') 
+                    THEN amount_from_minor ELSE 0 END) as total_deposits,
+                SUM(CASE WHEN type IN ('withdraw', 'reserve') 
+                    THEN amount_from_minor ELSE 0 END) as total_withdrawals,
+                COUNT(*) as total_transactions
+            FROM transactions
+            WHERE user_id = ? AND created_at >= ?
+        """, (user["id"], month_start))
+        
+        row = await cursor.fetchone()
+        
+        # Transaction count by type
+        cursor = await db.execute("""
+            SELECT type, COUNT(*) as count, SUM(amount_from_minor) as total
+            FROM transactions
+            WHERE user_id = ?
+            GROUP BY type
+        """, (user["id"],))
+        by_type = await cursor.fetchall()
+        
+        # Daily transactions last 30 days
+        cursor = await db.execute("""
+            SELECT 
+                DATE(created_at) as date,
+                COUNT(*) as count,
+                SUM(amount_from_minor) as total
+            FROM transactions
+            WHERE user_id = ? 
+            AND created_at >= datetime('now', '-30 days')
+            GROUP BY DATE(created_at)
+            ORDER BY date DESC
+        """, (user["id"],))
+        daily = await cursor.fetchall()
+        
+        return {
+            "this_month": {
+                "total_deposits": row["total_deposits"] or 0,
+                "total_withdrawals": row["total_withdrawals"] or 0,
+                "net_flow": (row["total_deposits"] or 0) - (row["total_withdrawals"] or 0),
+                "total_transactions": row["total_transactions"] or 0
+            },
+            "by_type": [dict(r) for r in by_type],
+            "daily_last_30_days": [dict(r) for r in daily]
+        }
+    finally:
+        await db.close()
+
+
 # Include router in main app
 app.include_router(api_router)
 
@@ -674,7 +1030,10 @@ async def startup_event():
     """Initialize database on startup"""
     try:
         await init_database()
+        await KYCService.init_kyc_table()
+        await OTPService.init_otp_table()
         print("✅ GNOVA API Server started successfully")
+        print(f"   ZarinPal: {'configured' if zarinpal.is_configured() else 'not configured (using mock)'}")
     except Exception as e:
         print(f"❌ Failed to initialize database: {e}")
 
