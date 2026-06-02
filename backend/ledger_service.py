@@ -237,7 +237,7 @@ class LedgerService:
                 INSERT INTO ledger_entries
                 (id, transaction_id, account_id, asset_id, debit_minor, credit_minor,
                  source_event, source_ref, status, metadata, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (entry_id, tx_id, account_id, asset_id, amount_minor, 0,
                    source_event, source_ref, "FINAL", json.dumps(metadata or {}), now))
             

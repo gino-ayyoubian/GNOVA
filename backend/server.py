@@ -348,14 +348,20 @@ async def get_conversion_quote(
 ):
     """Get conversion quote with rate lock"""
     
-    # Mock exchange rates
+    # Mock exchange rates (CREDIT and IRR are equivalent)
     rates = {
         ("IRR", "USDT"): 1 / 65000,
         ("USDT", "IRR"): 65000,
         ("IRR", "BTC"): 1 / 2850000000,
         ("BTC", "IRR"): 2850000000,
         ("USDT", "BTC"): 1 / 43846,
-        ("BTC", "USDT"): 43846
+        ("BTC", "USDT"): 43846,
+        ("CREDIT", "USDT"): 1 / 65000,
+        ("USDT", "CREDIT"): 65000,
+        ("CREDIT", "BTC"): 1 / 2850000000,
+        ("BTC", "CREDIT"): 2850000000,
+        ("CREDIT", "IRR"): 1,
+        ("IRR", "CREDIT"): 1,
     }
     
     rate_key = (request.from_asset, request.to_asset)

@@ -1,0 +1,40 @@
+{
+  "summary": "GNOVA Fintech Platform tested end-to-end. Backend: 20/20 pytest cases passed (health, auth/register/login/me, wallets, deposits min/max/initiate, webhook idempotency with double-credit prevention verified, conversion quote+confirm atomic, withdrawals KYC-gated, transactions pagination, rate alerts CRUD). Frontend: Landing/Login/Dashboard/Deposit/Convert/History/Withdraw all render with Persian RTL; data-testid coverage solid; full login flow with telegram_id=999888777 succeeded, dashboard shows 966,000 IRR total + 4 asset cards; conversion produced live quote with 5-min lock countdown and confirm button; history shows 6 transaction rows.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ConvertPage", "issues": ["React hydration warning in console: '<span> cannot be a child of <option>' on the asset <select> dropdowns. Likely from dev-instrumentation injected spans inside <option> nodes — non-blocking but pollutes console. Investigate whether asset option label rendering wraps text in a <span>."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: investigate ConvertPage <option> children to suppress hydration warning",
+    "Note: hardcoded exchange rates in server.py (USDT=65000, BTC=2.85B IRR) — main agent flagged as MOCKED; OK for MVP but should be swapped for live feed before prod",
+    "Note: Payment gateway PSP is MOCKED via /api/webhooks/payment (signature optional) — flagged in PRD"
+  ],
+  "critical_code_review_comments": [
+    "server.py: signature verification on /api/webhooks/payment is skipped when x_signature header is absent — webhook is fully open without header. Production must enforce signature presence.",
+    "server.py uses 'rate' as float and computes int(amount * rate) for tiny ratios (e.g., 1/2850000000 for IRR->BTC). Loss of precision for small amounts is acceptable for MVP but should use Decimal for stronger ledger integrity.",
+    "server.py has hardcoded mock rates in /api/convert/quote — duplicated with /api/wallets total_value calc. Extract to a shared rates module.",
+    "server.py uses deprecated @app.on_event('startup') — migrate to FastAPI lifespan handler.",
+    "Two requirements files present (requirements.txt and requirements_new.txt) — consolidate."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "telegram_id=999888777 (test_user, user_id=d3cfeb71-7000-4ac3-b1f7-7763552d76d5)",
+  "seed_data_creation": "Each pytest run creates: 1 new registered user (TEST_user_<tg>), 1 webhook event (TEST_webhook_<uuid>) crediting 1000 CREDIT, 1 conversion CREDIT->USDT for 65000 minor units, 1 rate alert USDT->IRR. Cumulative balance changes persist; test_user balance trends upward over runs.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 20 backend tests passing. Webhook idempotency confirmed (replay returns 'Already processed', no double-credit). Conversion quote -> confirm is atomic via LedgerService.debit + credit. Withdrawal correctly blocked by KYC=pending. Frontend uses GNOVA testid map at /app/frontend/src/constants/testIds/. ConvertPage console hydration warning is the only minor issue. Backend SQLite db at /app/backend/gnova.db. Telegram bot supervisor service RUNNING (not tested with real messages per instructions).",
+  "rca of the issue": "ConvertPage hydration warning: React 18 strict child rules disallow non-phrasing children inside <option>. The asset <select> options likely render '{asset.name} ({asset.code})' with a wrapping element. Fix: ensure <option> contains only plain text — use a template literal directly without nested elements."
+}
