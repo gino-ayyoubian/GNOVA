@@ -3,7 +3,7 @@ GNOVA Fintech Platform - Main FastAPI Server
 Complete API endpoints for financial operations
 """
 
-from fastapi import FastAPI, APIRouter, HTTPException, Header, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Header, Depends, Cookie, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -114,12 +114,42 @@ class ZarinPalCallbackRequest(BaseModel):
 
 # ==================== Auth Dependency ====================
 
-async def get_current_user(authorization: Optional[str] = Header(None)):
-    """Dependency to get current user from JWT token"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-    
-    token = authorization.replace("Bearer ", "")
+AUTH_COOKIE_NAME = "gnova_token"
+AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+
+
+def set_auth_cookie(response: Response, token: str):
+    """Set the httpOnly auth cookie on a response"""
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=token,
+        max_age=AUTH_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+    )
+
+
+def clear_auth_cookie(response: Response):
+    """Clear the httpOnly auth cookie"""
+    response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
+
+
+async def get_current_user(
+    authorization: Optional[str] = Header(None),
+    gnova_token: Optional[str] = Cookie(None),
+):
+    """Dependency to get current user from httpOnly cookie (preferred) or Bearer token"""
+    token = None
+    if gnova_token:
+        token = gnova_token
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authentication credentials")
+
     payload = AuthService.decode_jwt_token(token)
     
     if not payload:
@@ -164,8 +194,8 @@ async def health_check():
 # ==================== Authentication ====================
 
 @api_router.post("/auth/register")
-async def register_user(request: RegisterRequest):
-    """Register new user"""
+async def register_user(request: RegisterRequest, response: Response):
+    """Register new user - sets httpOnly auth cookie"""
     result = await AuthService.register_user(
         telegram_id=request.telegram_id,
         username=request.username,
@@ -175,25 +205,33 @@ async def register_user(request: RegisterRequest):
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result.get("error", "Registration failed"))
     
+    set_auth_cookie(response, result["token"])
+    
     return {
         "success": True,
-        "user_id": result["user_id"],
-        "token": result["token"]
+        "user_id": result["user_id"]
     }
 
 @api_router.post("/auth/login")
-async def login_user(request: LoginRequest):
-    """Login user via Telegram"""
+async def login_user(request: LoginRequest, response: Response):
+    """Login user via Telegram - sets httpOnly auth cookie"""
     result = await AuthService.login_telegram(request.telegram_id)
     
     if not result["ok"]:
         raise HTTPException(status_code=401, detail=result.get("error", "Login failed"))
     
+    set_auth_cookie(response, result["token"])
+    
     return {
         "success": True,
-        "user_id": result["user_id"],
-        "token": result["token"]
+        "user_id": result["user_id"]
     }
+
+@api_router.post("/auth/logout")
+async def logout_user(response: Response):
+    """Logout user - clears httpOnly auth cookie"""
+    clear_auth_cookie(response)
+    return {"success": True}
 
 @api_router.get("/auth/me")
 async def get_current_user_info(user: dict = Depends(get_current_user)):

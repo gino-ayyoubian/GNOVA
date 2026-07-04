@@ -15,7 +15,7 @@ import AlertsPage from './pages/AlertsPage';
 import SettingsPage from './pages/SettingsPage';
 
 const ProtectedRoute = ({ children }) => {
-  const { token, loading } = useAuth();
+  const { user, loading } = useAuth();
   
   if (loading) {
     return (
@@ -25,7 +25,7 @@ const ProtectedRoute = ({ children }) => {
     );
   }
   
-  if (!token) {
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
   
