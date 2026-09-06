@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Settings as SettingsIcon, 
@@ -15,11 +15,13 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from '../components/Sidebar';
 import { GNOVA } from '@/constants/testIds';
+import { useKycStatus } from '../hooks/useKycStatus';
 
 const SettingsPage = () => {
-  const { user, apiCall, refetch } = useAuth();
+  const { user, apiCall } = useAuth();
+  const [message, setMessage] = useState({ type: '', text: '' });
+  const { kycSubmission, loading: kycLoading, submitKYC: submitKycForm, autoApproveKYC } = useKycStatus(setMessage);
   const [activeTab, setActiveTab] = useState('account');
-  const [kycSubmission, setKycSubmission] = useState(null);
   const [kycForm, setKycForm] = useState({
     full_name: '',
     national_id: '',
@@ -30,51 +32,11 @@ const SettingsPage = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
-  
-  useEffect(() => {
-    fetchKYCStatus();
-  }, []);
-  
-  const fetchKYCStatus = async () => {
-    try {
-      const response = await apiCall('GET', '/kyc/status');
-      setKycSubmission(response.data.submission);
-    } catch (error) {
-      console.error('Failed to fetch KYC status:', error);
-    }
-  };
-  
   const submitKYC = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setMessage({ type: '', text: '' });
-    try {
-      await apiCall('POST', '/kyc/submit', kycForm);
-      setMessage({ type: 'success', text: 'درخواست KYC با موفقیت ارسال شد. در حال بررسی...' });
-      await fetchKYCStatus();
-      await refetch();
-    } catch (error) {
-      setMessage({ type: 'error', text: error.response?.data?.detail || 'خطا در ارسال' });
-    } finally {
-      setLoading(false);
-    }
+    await submitKycForm(kycForm);
   };
-  
-  const autoApproveKYC = async () => {
-    setLoading(true);
-    setMessage({ type: '', text: '' });
-    try {
-      await apiCall('POST', '/kyc/auto-approve');
-      setMessage({ type: 'success', text: 'KYC تایید شد! اکنون می‌توانید برداشت کنید.' });
-      await fetchKYCStatus();
-      await refetch();
-    } catch (error) {
-      setMessage({ type: 'error', text: error.response?.data?.detail || 'خطا' });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const kycActionLoading = loading || kycLoading;
   
   const requestOTP = async () => {
     setLoading(true);
@@ -223,8 +185,8 @@ const SettingsPage = () => {
                   </div>
                   <h3 className="font-heading text-xl font-semibold mb-2">در حال بررسی</h3>
                   <p className="text-gnova-text-secondary mb-6">درخواست شما در حال بررسی است</p>
-                  <button onClick={autoApproveKYC} disabled={loading} className="gnova-button-accent" data-testid="kyc-auto-approve">
-                    {loading ? 'در حال تایید...' : '🚀 تایید سریع (DEMO)'}
+                  <button onClick={autoApproveKYC} disabled={kycActionLoading} className="gnova-button-accent" data-testid="kyc-auto-approve">
+                    {kycActionLoading ? 'در حال تایید...' : '🚀 تایید سریع (DEMO)'}
                   </button>
                   <p className="text-xs text-gnova-text-secondary mt-3">
                     در محیط واقعی، بازبینی توسط ادمین انجام می‌شود
@@ -292,8 +254,8 @@ const SettingsPage = () => {
                       required
                     />
                   </div>
-                  <button type="submit" disabled={loading} className="gnova-button-primary w-full" data-testid="kyc-submit">
-                    {loading ? 'در حال ارسال...' : 'ارسال درخواست KYC'}
+                  <button type="submit" disabled={kycActionLoading} className="gnova-button-primary w-full" data-testid="kyc-submit">
+                    {kycActionLoading ? 'در حال ارسال...' : 'ارسال درخواست KYC'}
                   </button>
                 </form>
               )}
